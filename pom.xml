@@ -12,10 +12,10 @@
     </parent>
 
     <groupId>com.github.venth</groupId>
-    <artifactId>micrometer-appdynamics</artifactId>
+    <artifactId>micrometer-registry-appdynamics</artifactId>
     <!-- version set by jgitver -->
     <version>0.0.0</version>
-    <name>Micrometer AppDynamics Registry</name>
+    <name>Micrometer Registry for AppDynamics</name>
     <description>Emits Micrometer metrics to AppDynamics via HTTP Listener</description>
 
     <properties>
