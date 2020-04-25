@@ -1,10 +1,10 @@
 package com.github.venth.micrometer_appdynamics
 
-
+import java.util.concurrent.ThreadFactory
 import java.util.stream.IntStream
 
 import io.micrometer.core.instrument.MockClock
-import io.micrometer.core.instrument.step.StepRegistryConfig
+import io.micrometer.core.ipc.http.HttpSender
 import spock.lang.Specification
 import spock.lang.Subject
 import spock.lang.Unroll
@@ -13,16 +13,26 @@ import static java.time.Duration.ofMillis
 
 class AppDynamicsMeterRegistryTest extends Specification {
 
-    MetricPublisher metricSender = Mock()
+    MeterConverter metricConverter = Mock() {
+        _ * apply(_) >> AppDynamicsMeter.of("someMeter", AggregationType.AVERAGE, 0L)
+    }
 
-    StepRegistryConfig config = Mock() {
+    AppDynamicsRegistryConfig config = Mock() {
         step() >> ofMillis(10)
     }
 
     MockClock clock = new MockClock()
 
+    ThreadFactory threadFactory = Mock()
+
+    HttpSender httpSender = Mock()
+
     @Subject
-    AppDynamicsMeterRegistry registry = new AppDynamicsMeterRegistry(config, clock, metricSender)
+    AppDynamicsMeterRegistry registry = new AppDynamicsMeterRegistry(config,
+            clock,
+            metricConverter,
+            threadFactory,
+            httpSender)
 
     @Unroll
     def "sends #sentBatches metrics batches for batch size: #batchSize and registered metrics: #registeredMetrics"() {
@@ -40,7 +50,7 @@ class AppDynamicsMeterRegistryTest extends Specification {
             registry.publish()
 
         then:
-            sentBatches * metricSender.publish(_)
+            sentBatches * httpSender.post(_)
 
         where:
             registeredMetrics | batchSize || sentBatches

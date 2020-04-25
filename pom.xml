@@ -40,6 +40,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
             <scope>provided</scope>
@@ -52,6 +57,12 @@
         </dependency>
 
         <!-- tests -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Mandatory dependencies for using Spock -->
         <dependency>
             <groupId>org.spockframework</groupId>
@@ -157,6 +168,7 @@
                         <phase>compile</phase>
                         <configuration>
                             <compilerArgs>
+                                <arg>-Xlint:-processing</arg>
                                 <arg>-Xlint:all,-options</arg>
                                 <arg>-Xdoclint:none</arg>
                                 <arg>-XDcompilePolicy=simple</arg>
@@ -173,6 +185,7 @@
                         <phase>test-compile</phase>
                         <configuration>
                             <compilerArgs>
+                                <arg>-Xlint:-processing</arg>
                                 <arg>-Xlint:all,-options,-deprecation</arg>
                                 <arg>-Xdoclint:none</arg>
                             </compilerArgs>
