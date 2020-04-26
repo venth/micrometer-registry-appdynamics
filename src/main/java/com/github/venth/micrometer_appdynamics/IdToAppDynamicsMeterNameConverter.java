@@ -6,7 +6,7 @@ import java.util.stream.Stream;
 
 import io.micrometer.core.instrument.Meter;
 
-class IdToAppDynamicsMeterNameConverter implements Function<Meter.Id, String> {
+class IdToAppDynamicsMeterNameConverter implements MeterNameConverter {
 
     @Override
     public String apply(Meter.Id id) {
