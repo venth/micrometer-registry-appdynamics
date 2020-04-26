@@ -15,50 +15,50 @@ class AppDynamicsMeterConverter implements MeterConverter {
     @Override
     public AppDynamicsMeter apply(Meter meter) {
         return meter.match(
-                this::convert,
-                this::convert,
-                this::convert,
-                this::convert,
-                this::convert,
-                this::convert,
-                this::convert,
-                this::convert,
-                this::convert);
+                this::convertMeter,
+                this::convertMeter,
+                this::convertMeter,
+                this::convertMeter,
+                this::convertMeter,
+                this::convertMeter,
+                this::convertMeter,
+                this::convertMeter,
+                this::convertMeter);
     }
 
-    private AppDynamicsMeter convert(Gauge meter) {
+    private AppDynamicsMeter convertMeter(Gauge meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(Counter meter) {
+    private AppDynamicsMeter convertMeter(Counter meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(Timer meter) {
+    private AppDynamicsMeter convertMeter(Timer meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(DistributionSummary meter) {
+    private AppDynamicsMeter convertMeter(DistributionSummary meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(LongTaskTimer meter) {
+    private AppDynamicsMeter convertMeter(LongTaskTimer meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(TimeGauge meter) {
+    private AppDynamicsMeter convertMeter(TimeGauge meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(FunctionCounter meter) {
+    private AppDynamicsMeter convertMeter(FunctionCounter meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(FunctionTimer meter) {
+    private AppDynamicsMeter convertMeter(FunctionTimer meter) {
         return AppDynamicsMeter.empty();
     }
 
-    private AppDynamicsMeter convert(Meter meter) {
+    private AppDynamicsMeter convertMeter(Meter meter) {
         return AppDynamicsMeter.empty();
     }
 }
