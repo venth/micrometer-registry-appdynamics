@@ -1,5 +1,7 @@
 package com.github.venth.micrometer_appdynamics;
 
+import java.time.Duration;
+
 import io.micrometer.core.instrument.step.StepRegistryConfig;
 
 public interface AppDynamicsRegistryConfig extends StepRegistryConfig {
@@ -7,6 +9,17 @@ public interface AppDynamicsRegistryConfig extends StepRegistryConfig {
     @Override
     default String prefix() {
         return "appdynamics";
+    }
+
+    /**
+     * AppDynamics expects averages on all meters over 1 minut in a 10 or 60 minute window.
+     * Reference: https://docs.appdynamics.com/display/PRO45/Standalone+Machine+Agent+HTTP+Listener
+     * @return 10 minute step
+     */
+    @Override
+    default Duration step() {
+        String v = get(prefix() + ".step");
+        return v == null ? Duration.ofMinutes(10) : Duration.parse(v);
     }
 
     /**
