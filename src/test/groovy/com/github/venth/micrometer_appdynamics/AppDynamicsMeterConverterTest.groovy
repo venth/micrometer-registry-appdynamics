@@ -3,8 +3,12 @@ package com.github.venth.micrometer_appdynamics
 
 import io.micrometer.core.instrument.Meter
 import io.micrometer.core.instrument.Tags
+import io.micrometer.core.instrument.distribution.CountAtBucket
+import io.micrometer.core.instrument.distribution.HistogramSnapshot
+import io.micrometer.core.instrument.distribution.ValueAtPercentile
 import io.micrometer.core.instrument.noop.NoopCounter
 import io.micrometer.core.instrument.noop.NoopGauge
+import io.micrometer.core.instrument.noop.NoopTimer
 import spock.lang.Specification
 import spock.lang.Subject
 import spock.lang.Unroll
@@ -125,6 +129,193 @@ class AppDynamicsMeterConverterTest extends Specification {
             1d       || 100
     }
 
+    def "converts timer observation AppDynamics meter types"() {
+        given:
+            def timer = timerMeter()
+
+        and:
+            _ * meterNameConverter.apply(timer.getId()) >> 'some'
+
+        when:
+            def converted = converter
+                    .apply(timer)
+                    .collect { it.aggregatorType }
+        then:
+            [OBSERVATION, OBSERVATION, OBSERVATION, OBSERVATION, OBSERVATION] == converted
+    }
+
+    def "adds to each timer metric name multiplier value"() {
+        given:
+            def someTimeMeter = 'someTimeMeter'
+            def timer = timerMeter(withName(someTimeMeter))
+            _ * meterNameConverter.apply(timer.getId()) >> someTimeMeter
+
+        when:
+            def converted = converter
+                    .apply(timer)
+                    .collect { it.metricName }
+        then:
+            converted.size() > 0
+
+        and:
+            converted?.each {
+                assert it.endsWith('__100')
+            }
+    }
+
+    def "emits timer: [mean, max time, total time]"() {
+        given:
+            def timerName = 'timerName'
+            def timer = timerMeter(withName(timerName))
+            _ * meterNameConverter.apply(timer.getId()) >> timerName
+
+        and:
+            _ * timer.takeSnapshot() >> histogramSnapshot()
+
+        and:
+            def statistics = [
+                    '__MEAN',
+                    '__MAX',
+                    '__TOTAL']
+
+        when:
+            def converted = converter
+                    .apply(timer)
+                    .collect { it.metricName }
+        then:
+            converted.size() > 0
+
+        and:
+            statistics.each { statistic ->
+                assert converted.findAll { it.contains(statistic) }.size() == 1
+            }
+    }
+
+    def "emits timer percentiles"() {
+        given:
+            def timerName = 'timerName'
+            def timer = timerMeter(withName(timerName))
+            _ * meterNameConverter.apply(timer.getId()) >> timerName
+
+        and:
+            def percentiles = new ValueAtPercentile[]{
+                    percentileOf(0.5d, 50),
+                    percentileOf(0.95d, 95),
+                    percentileOf(0.3d, 30),
+            }
+
+            _ * timer.takeSnapshot() >> histogramSnapshot(withPercentiles(percentiles))
+
+        when:
+            def converted = converter
+                    .apply(timer)
+                    .collect { it.metricName }
+        then:
+            converted.size() > 0
+
+        and:
+            percentiles.each { percentile ->
+                assert converted.findAll {
+                    it.contains("__${Math.round(percentile.percentile() * 100)}th")
+                }.size() == 1
+            }
+    }
+
+    @Unroll
+    def "multiplies each timer statistic value: #measured by 100 and round arithmetically to: #emitted"() {
+        given:
+            def timer = timerMeter(withCounterValue(measured))
+
+        and:
+            _ * meterNameConverter.apply(timer.getId()) >> 'some'
+
+        and:
+            def histogramSnapshot = histogramSnapshot(
+                    withTotal(measured),
+                    withMax(measured),
+                    withPercentiles(percentileOf(0.5d, measured), percentileOf(0.95d, measured)))
+            _ * timer.takeSnapshot() >> histogramSnapshot
+
+        when:
+            def converted = converter
+                    .apply(timer)
+                    .collect { it.value }
+                    .collect { it.intValue() }
+        then:
+            converted.each {
+                assert it == emitted
+            }
+
+        where:
+            measured || emitted
+            100.01d  || 10001
+            0.011d   || 1
+            0.014d   || 1
+            0.015d   || 2
+            0.016d   || 2
+            0d       || 0
+            1d       || 100
+    }
+
+    private static withPercentiles(ValueAtPercentile... percentiles) {
+        { snapshot ->
+            new HistogramSnapshot(
+                    snapshot.count(),
+                    snapshot.total(),
+                    snapshot.max(),
+                    percentiles,
+                    snapshot.histogramCounts(),
+                    snapshot::outputSummary)
+        }
+    }
+
+    private static withTotal(double total) {
+        { snapshot ->
+            new HistogramSnapshot(
+                    snapshot.count(),
+                    total,
+                    snapshot.max(),
+                    snapshot.percentileValues(),
+                    snapshot.histogramCounts(),
+                    snapshot::outputSummary)
+        }
+    }
+
+    private static withMax(double max) {
+        { snapshot ->
+            new HistogramSnapshot(
+                    snapshot.count(),
+                    snapshot.total(),
+                    max,
+                    snapshot.percentileValues(),
+                    snapshot.histogramCounts(),
+                    snapshot::outputSummary)
+        }
+    }
+
+    private static HistogramSnapshot histogramSnapshot(Closure<HistogramSnapshot>... behaviors) {
+        def snapshot = new HistogramSnapshot(
+                0l,
+                0d,
+                0d,
+                new ValueAtPercentile[0],
+                new CountAtBucket[0],
+                null)
+        behaviors.each {
+            snapshot = it.call(snapshot)
+        }
+
+        snapshot
+    }
+
+    private static ValueAtPercentile percentileOf(double percentile, double value) {
+        new ValueAtPercentile(percentile, value)
+    }
+
+    private io.micrometer.core.instrument.Timer timerMeter(Closure<? extends Meter>... behaviors) {
+        meter(NoopTimer, Meter.Type.COUNTER, behaviors) as io.micrometer.core.instrument.Timer
+    }
+
     private counterMeter(Closure<? extends Meter>... behaviors) {
         meter(NoopCounter, Meter.Type.COUNTER, behaviors)
     }
@@ -151,7 +342,8 @@ class AppDynamicsMeterConverterTest extends Specification {
 
     private static Closure<? extends Meter> withName(String name) {
         return { meter -> //noinspection GroovyAssignabilityCheck
-            newMeter(meter.class, meter.getId().withName(name)) }
+            newMeter(meter.class, meter.getId().withName(name))
+        }
     }
 
     @SuppressWarnings("GrMethodMayBeStatic")
