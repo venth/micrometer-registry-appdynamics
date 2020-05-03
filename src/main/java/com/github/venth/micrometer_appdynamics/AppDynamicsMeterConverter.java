@@ -12,9 +12,14 @@ import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.TimeGauge;
 import io.micrometer.core.instrument.Timer;
 import lombok.AllArgsConstructor;
+import lombok.val;
 
 @AllArgsConstructor
 class AppDynamicsMeterConverter implements MeterConverter {
+
+    private static final String MULTIPLIER_SUFFIX = "__100";
+
+    private static final int MULTIPLIER = 100;
 
     private final MeterNameConverter meterNameConverter;
 
@@ -33,14 +38,18 @@ class AppDynamicsMeterConverter implements MeterConverter {
     }
 
     private Stream<AppDynamicsMeter> convertMeter(Gauge meter) {
-        return Stream.of(AppDynamicsMeter.of(meterNameConverter.apply(
-                meter.getId()),
-                AggregationType.AVERAGE,
-                Double.valueOf(meter.value()).longValue()));
+        val meterName = meterNameConverter.apply(meter.getId());
+        return Stream.of(
+                observationOf(meter, meterName, 1),
+                observationOf(meter, meterName + MULTIPLIER_SUFFIX, MULTIPLIER));
     }
 
     private Stream<AppDynamicsMeter> convertMeter(Counter meter) {
-        return Stream.empty();
+        val meterName = meterNameConverter.apply(meter.getId());
+        return Stream.of(
+                observationOf(meter, meterName, 1),
+                observationOf(meter, meterName + MULTIPLIER_SUFFIX, MULTIPLIER)
+        );
     }
 
     private Stream<AppDynamicsMeter> convertMeter(Timer meter) {
@@ -69,5 +78,19 @@ class AppDynamicsMeterConverter implements MeterConverter {
 
     private Stream<AppDynamicsMeter> convertMeter(Meter meter) {
         return Stream.empty();
+    }
+
+    private AppDynamicsMeter observationOf(Gauge meter, String meterName, int multiplier) {
+        return AppDynamicsMeter.of(
+                meterName,
+                AggregationType.OBSERVATION,
+                Math.round(meter.value() * multiplier));
+    }
+
+    private AppDynamicsMeter observationOf(Counter meter, String meterName, int multiplier) {
+        return AppDynamicsMeter.of(
+                meterName,
+                AggregationType.OBSERVATION,
+                Math.round(meter.count() * multiplier));
     }
 }

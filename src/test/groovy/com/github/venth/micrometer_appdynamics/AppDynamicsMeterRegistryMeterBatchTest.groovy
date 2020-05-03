@@ -1,5 +1,7 @@
 package com.github.venth.micrometer_appdynamics
 
+import java.util.stream.Stream
+
 import io.micrometer.core.instrument.Meter
 import spock.lang.Shared
 import spock.lang.Specification
@@ -13,7 +15,7 @@ class AppDynamicsMeterRegistryMeterBatchTest extends Specification {
             def batch = AppDynamicsMeterRegistry.MeterBatch.of(meters)
 
         and:
-            _ * meterConverter.apply(_) >> { convertedMeter }
+            _ * meterConverter.apply(_) >> { Stream.of(convertedMeter) }
 
         when:
             def prepared = batch.prepareUsing(meterConverter)
