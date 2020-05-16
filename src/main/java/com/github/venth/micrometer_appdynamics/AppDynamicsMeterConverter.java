@@ -1,5 +1,6 @@
 package com.github.venth.micrometer_appdynamics;
 
+import java.util.Arrays;
 import java.util.stream.Stream;
 
 import io.micrometer.core.instrument.Counter;
@@ -53,7 +54,27 @@ class AppDynamicsMeterConverter implements MeterConverter {
     }
 
     private Stream<AppDynamicsMeter> convertMeter(Timer meter) {
-        return Stream.empty();
+        val meterName = meterNameConverter.apply(meter.getId());
+        val snapshot = meter.takeSnapshot();
+
+        Stream<AppDynamicsMeter> common = Stream.of(
+                observationOf(meterName + "__MEAN", snapshot.mean(), 1),
+                observationOf(meterName + "__MEAN__100", snapshot.mean(), 100),
+                observationOf(meterName + "__TOTAL", snapshot.total(), 1),
+                observationOf(meterName + "__TOTAL__100", snapshot.total(), 100),
+                observationOf(meterName + "__MAX", snapshot.max(), 1),
+                observationOf(meterName + "__MAX__100", snapshot.max(), 100));
+
+        Stream<AppDynamicsMeter> percentiles = Arrays
+                .stream(snapshot.percentileValues())
+                .flatMap(percentile -> {
+                    val percentileName = meterName + "__" + Math.round(percentile.percentile() * 100) + "th";
+                    return Stream.of(
+                            observationOf(percentileName, percentile.value(), 1),
+                            observationOf(percentileName + "__100", percentile.value(), 100));
+                });
+
+        return Stream.concat(common, percentiles);
     }
 
     private Stream<AppDynamicsMeter> convertMeter(DistributionSummary meter) {
@@ -78,6 +99,13 @@ class AppDynamicsMeterConverter implements MeterConverter {
 
     private Stream<AppDynamicsMeter> convertMeter(Meter meter) {
         return Stream.empty();
+    }
+
+    private AppDynamicsMeter observationOf(String meterName, double value, int multiplier) {
+        return AppDynamicsMeter.of(
+                meterName,
+                AggregationType.OBSERVATION,
+                Math.round(value * multiplier));
     }
 
     private AppDynamicsMeter observationOf(Gauge meter, String meterName, int multiplier) {

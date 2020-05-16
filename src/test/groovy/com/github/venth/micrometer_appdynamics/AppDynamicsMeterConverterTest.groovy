@@ -1,6 +1,5 @@
 package com.github.venth.micrometer_appdynamics
 
-
 import io.micrometer.core.instrument.Meter
 import io.micrometer.core.instrument.Tags
 import io.micrometer.core.instrument.distribution.CountAtBucket
@@ -9,7 +8,6 @@ import io.micrometer.core.instrument.distribution.ValueAtPercentile
 import io.micrometer.core.instrument.noop.NoopCounter
 import io.micrometer.core.instrument.noop.NoopGauge
 import io.micrometer.core.instrument.noop.NoopTimer
-import spock.lang.Ignore
 import spock.lang.Specification
 import spock.lang.Subject
 import spock.lang.Unroll
@@ -130,7 +128,6 @@ class AppDynamicsMeterConverterTest extends Specification {
             1d       || 100
     }
 
-    @Ignore
     def "converts timer observation AppDynamics meter types"() {
         given:
             def timer = timerMeter()
@@ -143,10 +140,13 @@ class AppDynamicsMeterConverterTest extends Specification {
                     .apply(timer)
                     .collect { it.aggregatorType }
         then:
-            [OBSERVATION, OBSERVATION, OBSERVATION, OBSERVATION, OBSERVATION] == converted
+            converted.size() > 0
+        and:
+            converted.each {
+                assert OBSERVATION == it
+            }
     }
 
-    @Ignore
     def "adds to each timer metric name multiplier value"() {
         given:
             def someTimeMeter = 'someTimeMeter'
@@ -157,6 +157,7 @@ class AppDynamicsMeterConverterTest extends Specification {
             def converted = converter
                     .apply(timer)
                     .collect { it.metricName }
+                    .findAll { it.endsWith('__100') }
         then:
             converted.size() > 0
 
@@ -166,7 +167,6 @@ class AppDynamicsMeterConverterTest extends Specification {
             }
     }
 
-    @Ignore
     def "emits timer: [mean, max time, total time]"() {
         given:
             def timerName = 'timerName'
@@ -191,12 +191,11 @@ class AppDynamicsMeterConverterTest extends Specification {
 
         and:
             statistics.each { statistic ->
-                assert converted.findAll { it.contains(statistic) }.size() == 1
+                assert converted.findAll { it.contains(statistic) }.size() == 2
             }
     }
 
-    @Ignore
-    def "emits timer percentiles"() {
+    def "emits timer percentiles multiplied and not multiplied"() {
         given:
             def timerName = 'timerName'
             def timer = timerMeter(withName(timerName))
@@ -222,13 +221,13 @@ class AppDynamicsMeterConverterTest extends Specification {
             percentiles.each { percentile ->
                 assert converted.findAll {
                     it.contains("__${Math.round(percentile.percentile() * 100)}th")
-                }.size() == 1
+                }.size() == 2
             }
     }
 
-    @Ignore
     @Unroll
-    def "multiplies each timer statistic value: #measured by 100 and round arithmetically to: #emitted"() {
+    def """multiplies each timer statistic value: #measured by 100 and round arithmetically to: #emittedMultiplied and
+           round arithmetically to: #emittedOriginally"""() {
         given:
             def timer = timerMeter(withCounterValue(measured))
 
@@ -239,28 +238,42 @@ class AppDynamicsMeterConverterTest extends Specification {
             def histogramSnapshot = histogramSnapshot(
                     withTotal(measured),
                     withMax(measured),
+                    withMean(measured),
                     withPercentiles(percentileOf(0.5d, measured), percentileOf(0.95d, measured)))
             _ * timer.takeSnapshot() >> histogramSnapshot
 
         when:
-            def converted = converter
+            def convertedMultiplied = converter
                     .apply(timer)
+                    .findAll { it.metricName.endsWith('__100') }
+                    .collect { it.value }
+                    .collect { it.intValue() }
+
+            def convertedOriginally = converter
+                    .apply(timer)
+                    .findAll { !it.metricName.endsWith('__100') }
                     .collect { it.value }
                     .collect { it.intValue() }
         then:
-            converted.each {
-                assert it == emitted
+            verifyAll {
+                convertedMultiplied.every {
+                    it == emittedMultiplied
+                }
+                convertedOriginally.every {
+                    it == emittedOriginally
+                }
             }
 
         where:
-            measured || emitted
-            100.01d  || 10001
-            0.011d   || 1
-            0.014d   || 1
-            0.015d   || 2
-            0.016d   || 2
-            0d       || 0
-            1d       || 100
+            measured || emittedMultiplied | emittedOriginally
+            100.01d  || 10001             | 100
+            0.011d   || 1                 | 0
+            0.014d   || 1                 | 0
+            0.015d   || 2                 | 0
+            0.016d   || 2                 | 0
+            0d       || 0                 | 0
+            1d       || 100               | 1
+            0.6d     || 60                | 1
     }
 
     private static withPercentiles(ValueAtPercentile... percentiles) {
@@ -293,6 +306,18 @@ class AppDynamicsMeterConverterTest extends Specification {
                     snapshot.count(),
                     snapshot.total(),
                     max,
+                    snapshot.percentileValues(),
+                    snapshot.histogramCounts(),
+                    snapshot::outputSummary)
+        }
+    }
+
+    private static withMean(double mean) {
+        { snapshot ->
+            new HistogramSnapshot(
+                    1,
+                    snapshot.total(),
+                    snapshot.max(),
                     snapshot.percentileValues(),
                     snapshot.histogramCounts(),
                     snapshot::outputSummary)
