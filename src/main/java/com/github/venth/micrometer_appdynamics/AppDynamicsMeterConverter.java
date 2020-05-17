@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.LongTaskTimer;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.TimeGauge;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.distribution.HistogramSupport;
 import lombok.AllArgsConstructor;
 import lombok.val;
 
@@ -29,8 +30,8 @@ class AppDynamicsMeterConverter implements MeterConverter {
         return meter.match(
                 this::convertMeter,
                 this::convertMeter,
-                this::convertMeter,
-                this::convertMeter,
+                this::convertHistogram,
+                this::convertHistogram,
                 this::convertMeter,
                 this::convertMeter,
                 this::convertMeter,
@@ -53,7 +54,7 @@ class AppDynamicsMeterConverter implements MeterConverter {
         );
     }
 
-    private Stream<AppDynamicsMeter> convertMeter(Timer meter) {
+    private Stream<AppDynamicsMeter> convertHistogram(HistogramSupport meter) {
         val meterName = meterNameConverter.apply(meter.getId());
         val snapshot = meter.takeSnapshot();
 
@@ -75,10 +76,6 @@ class AppDynamicsMeterConverter implements MeterConverter {
                 });
 
         return Stream.concat(common, percentiles);
-    }
-
-    private Stream<AppDynamicsMeter> convertMeter(DistributionSummary meter) {
-        return Stream.empty();
     }
 
     private Stream<AppDynamicsMeter> convertMeter(LongTaskTimer meter) {
