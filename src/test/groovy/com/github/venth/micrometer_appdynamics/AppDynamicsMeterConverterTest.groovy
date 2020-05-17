@@ -1,11 +1,13 @@
 package com.github.venth.micrometer_appdynamics
 
+import io.micrometer.core.instrument.DistributionSummary
 import io.micrometer.core.instrument.Meter
 import io.micrometer.core.instrument.Tags
 import io.micrometer.core.instrument.distribution.CountAtBucket
 import io.micrometer.core.instrument.distribution.HistogramSnapshot
 import io.micrometer.core.instrument.distribution.ValueAtPercentile
 import io.micrometer.core.instrument.noop.NoopCounter
+import io.micrometer.core.instrument.noop.NoopDistributionSummary
 import io.micrometer.core.instrument.noop.NoopGauge
 import io.micrometer.core.instrument.noop.NoopTimer
 import spock.lang.Specification
@@ -276,6 +278,159 @@ class AppDynamicsMeterConverterTest extends Specification {
             0.6d     || 60                | 1
     }
 
+    def "converts distribution summary observation AppDynamics meter types"() {
+        given:
+            def distributionSummary = distributionSummaryMeter()
+
+        and:
+            _ * meterNameConverter.apply(distributionSummary.getId()) >> 'some'
+
+        when:
+            def converted = converter
+                    .apply(distributionSummary)
+                    .collect { it.aggregatorType }
+        then:
+            converted.size() > 0
+        and:
+            converted.each {
+                assert OBSERVATION == it
+            }
+    }
+
+    def "adds to each distribution summary metric name multiplier value"() {
+        given:
+            def someDistributionSummaryName = 'someDistributionSummaryName'
+            def distributionSummary = distributionSummaryMeter(withName(someDistributionSummaryName))
+            _ * meterNameConverter.apply(distributionSummary.getId()) >> someDistributionSummaryName
+
+        when:
+            def converted = converter
+                    .apply(distributionSummary)
+                    .collect { it.metricName }
+                    .findAll { it.endsWith('__100') }
+        then:
+            converted.size() > 0
+
+        and:
+            converted?.each {
+                assert it.endsWith('__100')
+            }
+    }
+
+    def "emits distribution summary: [mean, max time, total amount]"() {
+        given:
+            def distributionSummaryName = 'distributionSummaryName'
+            def distributionSummary = distributionSummaryMeter(withName(distributionSummaryName))
+            _ * meterNameConverter.apply(distributionSummary.getId()) >> distributionSummaryName
+
+        and:
+            _ * distributionSummary.takeSnapshot() >> histogramSnapshot()
+
+        and:
+            def statistics = [
+                    '__MEAN',
+                    '__MAX',
+                    '__TOTAL']
+
+        when:
+            def converted = converter
+                    .apply(distributionSummary)
+                    .collect { it.metricName }
+        then:
+            converted.size() > 0
+
+        and:
+            statistics.each { statistic ->
+                assert converted.findAll { it.contains(statistic) }.size() == 2
+            }
+    }
+
+    def "emits distribution summary percentiles multiplied and not multiplied"() {
+        given:
+            def distributionSummaryName = 'distributionSummaryName'
+            def distributionSummary = distributionSummaryMeter(withName(distributionSummaryName))
+            _ * meterNameConverter.apply(distributionSummary.getId()) >> distributionSummaryName
+
+        and:
+            def percentiles = new ValueAtPercentile[]{
+                    percentileOf(0.5d, 50),
+                    percentileOf(0.95d, 95),
+                    percentileOf(0.3d, 30),
+            }
+
+            _ * distributionSummary.takeSnapshot() >> histogramSnapshot(withPercentiles(percentiles))
+
+        when:
+            def converted = converter
+                    .apply(distributionSummary)
+                    .collect { it.metricName }
+        then:
+            converted.size() > 0
+
+        and:
+            percentiles.each { percentile ->
+                assert converted.findAll {
+                    it.contains("__${Math.round(percentile.percentile() * 100)}th")
+                }.size() == 2
+            }
+    }
+
+    @Unroll
+    def """multiplies each distribution summary statistic value: #measured by 100 and round arithmetically to: #emittedMultiplied and
+           round arithmetically to: #emittedOriginally"""() {
+        given:
+            def distributionSummary = distributionSummaryMeter(withCounterValue(measured))
+
+        and:
+            _ * meterNameConverter.apply(distributionSummary.getId()) >> 'some'
+
+        and:
+            def histogramSnapshot = histogramSnapshot(
+                    withTotal(measured),
+                    withMax(measured),
+                    withMean(measured),
+                    withPercentiles(percentileOf(0.5d, measured), percentileOf(0.95d, measured)))
+            _ * distributionSummary.takeSnapshot() >> histogramSnapshot
+
+        when:
+            def convertedMultiplied = converter
+                    .apply(distributionSummary)
+                    .findAll { it.metricName.endsWith('__100') }
+                    .collect { it.value }
+                    .collect { it.intValue() }
+
+            def convertedOriginally = converter
+                    .apply(distributionSummary)
+                    .findAll { !it.metricName.endsWith('__100') }
+                    .collect { it.value }
+                    .collect { it.intValue() }
+        then:
+            verifyAll {
+                convertedMultiplied.size() > 0
+                convertedOriginally.size() > 0
+            }
+        and:
+            verifyAll {
+                convertedMultiplied.every {
+                    it == emittedMultiplied
+                }
+                convertedOriginally.every {
+                    it == emittedOriginally
+                }
+            }
+
+        where:
+            measured || emittedMultiplied | emittedOriginally
+            100.01d  || 10001             | 100
+            0.011d   || 1                 | 0
+            0.014d   || 1                 | 0
+            0.015d   || 2                 | 0
+            0.016d   || 2                 | 0
+            0d       || 0                 | 0
+            1d       || 100               | 1
+            0.6d     || 60                | 1
+    }
+
     private static withPercentiles(ValueAtPercentile... percentiles) {
         { snapshot ->
             new HistogramSnapshot(
@@ -341,6 +496,10 @@ class AppDynamicsMeterConverterTest extends Specification {
 
     private static ValueAtPercentile percentileOf(double percentile, double value) {
         new ValueAtPercentile(percentile, value)
+    }
+
+    private DistributionSummary distributionSummaryMeter(Closure<? extends Meter>... behaviors) {
+        meter(NoopDistributionSummary, Meter.Type.DISTRIBUTION_SUMMARY, behaviors) as DistributionSummary
     }
 
     private io.micrometer.core.instrument.Timer timerMeter(Closure<? extends Meter>... behaviors) {
